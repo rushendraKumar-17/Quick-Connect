@@ -43,7 +43,7 @@ function App() {
         <Route path='/login' element={<Login/>}/>
         <Route path='/' element = {<Home/>}/>
         <Route path="/signup" element={<Signup/>}/>
-        <Route path="/meet/:meetId/:role" element={<Meeting/>}/>
+        <Route path="/meet/:meetId/" element={<Meeting/>}/>
         <Route path = "/meet/join/:meetId/:role" element = {<Readypage />}/>
       </Routes>
     </>

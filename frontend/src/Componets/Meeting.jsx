@@ -1,104 +1,116 @@
-import React, { useContext, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import peer from "../Services/peer.js";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSocket } from "../context/SocketProvider";
-
+import ReactPlayer from "react-player";
+import peer from "../Services/peer";
 const Meeting = () => {
   const socket = useSocket();
-  const { meetId, role } = useParams(); // 'host' or 'guest'
   const [myStream, setMyStream] = useState(null);
-  const [remoteStream, setRemoteStream] = useState(null);
+  const [remoteStream,setRemoteStream] = useState(null);
   const [remoteSocketId, setRemoteSocketId] = useState(null);
-
-  async function getMediaStream() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      return stream;
-    } catch (err) {
-      console.error("Error accessing media devices.", err);
-    }
-  }
-
-  const createOffer = async () => {
-    const offer = await peer.getOffer();
-    return offer;
-  };
-
-  const handleOffer = async (offer) => {
-    const answer = await peer.getAnswer(offer);
-    socket.emit("answer", answer);
-    socket.setLocalDescription(answer);
-    socket.setRemoteDescription(offer);
-
-  };
-
-
-  useEffect(() => {
-    getMediaStream().then((stream) => {
-      setMyStream(stream);
-      const localVideo = document.getElementById("localVideo");
-      localVideo.srcObject = stream;
-  
-      peer.setLocalDescription(stream);
-  
-      // Listen for remote stream
-      peer.onTrack((remoteStream) => {
-        setRemoteStream(remoteStream);
-        const remoteVideo = document.getElementById("remoteVideo");
-        remoteVideo.srcObject = remoteStream;
-      });
-  
-      if (role === "host") {
-        createOffer().then((offer) => {
-          socket.on("user:joined", (s) => {
-            console.log(s);
-            setRemoteSocketId(s.id);
-            socket.emit("offer", offer);
-          });
-        });
-        socket.on("answer", (answer) => peer.setRemoteDescription(answer));
-      } else {
-        socket.emit("user:joined", "rushi");
-        socket.on("offer", handleOffer);
-      }
-    });
+  const handleUserJoined = useCallback(({ email, id }) => {
+    console.log(`Email ${email} joined room`);
+    setRemoteSocketId(id);
   }, []);
-  
-  return (
-    <div
-      style={{
-        backgroundColor: "black",
-        width: "100vw",
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-      }}>
-      <p>Meeting {meetId}</p>
+  const handleCallUser = useCallback(async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: true,
+    });
+    const offer = await peer.getOffer();
+    socket.emit("user:call", { to: remoteSocketId, offer });
+    setMyStream(stream);
 
-      <br />
+  }, [remoteSocketId,socket]);
+  const handleIncomingCall = useCallback(async({ from, offer }) => {
+    console.log("Incoming call from : ", from, offer);
+    setRemoteSocketId(from);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: true,
+    });
+    setMyStream(stream);
+
+    const ans = await peer.getAnswer(offer);
+    socket.emit('call:accepted',{to:from,ans})
+  }, [socket]);
+  const sendStreams = useCallback(() =>{
+    for(const track of myStream.getTracks()){
+      peer.peer.addTrack(track,myStream);
+    }
+  },[myStream]);
+  const handleCallAccepted = useCallback(({from,ans})=>{
+    peer.setLocalDescription(ans);
+    console.log(`Call Accepted!`);
+    sendStreams();
+  },[sendStreams]);
+  const handleNegoNeedFinal = useCallback(async({ans})=>{
+    await peer.setLocalDescription(ans);
+  },[])
+const handleNegoNeeded = useCallback(async()=>{
+  const offer = await peer.getOffer();
+  socket.emit("peer:nego:needed",{offer,to:remoteSocketId})
+},[]);
+const handleNegoNeedIncoming = useCallback(({from,offer})=>{
+  const ans = peer.getAnswer(offer);
+  socket.emit("peer:nego:done",{to:from,ans})
+},[]);
+  useEffect(()=>{
+    peer.peer.addEventListener('negotiationneeded',handleNegoNeeded)
+    return ()=>{
+      peer.peer.removeEventListener("negotiationneeded",handleNegoNeeded);
+    }
+  },[])
+
+  useEffect(()=>{
+    peer.peer.addEventListener('track',async ev =>{
+      const remoteStream = ev.streams;
+      console.log('Got TRacks!!!');
+      setRemoteStream(remoteStream);
+    })
+  },[])
+  useEffect(() => {
+    socket.on("user:joined", handleUserJoined);
+    socket.on("incoming:call", handleIncomingCall);
+    socket.on("call:accepted",handleCallAccepted);
+    socket.on("peer:nego:needed",handleNegoNeedIncoming);
+    socket.on('peer:neo:final',handleNegoNeedFinal);
+    return () => {
+      socket.off("user:joined", handleUserJoined);
+      socket.off("incoming:call", handleIncomingCall);
+    socket.off("call:accepted",handleCallAccepted);
+    socket.off("peer:nego:needed",handleNegoNeedIncoming);
+    socket.off('peer:neo:final',handleNegoNeedFinal);
+
+    };
+  }, [socket, handleUserJoined, handleIncomingCall,handleCallAccepted]);
+  return (
+    <div>
+      <h1>Meeting</h1>
+      <h4>{remoteSocketId ? "Connected" : "No one in room"}</h4>
+      {remoteSocketId && <button onClick={handleCallUser}>CALL</button>}
       {myStream && (
         <div>
-          <h3>Local video</h3>
-          <video
-            id="localVideo"
-            autoPlay
+          <h2>My Stream</h2>
+          <ReactPlayer
+            url={myStream}
+            height="300px"
+            width="300px"
+            playing
             muted
-            style={{ width: "300px", height: "300px" }}></video>
+          />
         </div>
       )}
+      {myStream && <button onClick={sendStreams}>Send Stream</button>}
       {remoteStream && (
         <div>
-          <h3>Remote stream</h3>
-          <video
-            id="remoteVideo"
-            autoPlay
-            style={{ width: "300px", height: "300px" }}></video>
+          <h2>Remote Stream</h2>
+          <ReactPlayer
+            url={remoteStream}
+            height="300px"
+            width="300px"
+            playing
+            muted
+          />
         </div>
       )}
     </div>

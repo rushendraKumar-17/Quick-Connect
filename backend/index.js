@@ -19,45 +19,33 @@ const server = new http.createServer(app);
 const io = new Server(server, {
   cors: true,
 });
-io.on("connect", (socket) => {
-  console.log(socket.client.id);
-  socket.on("message",(msg)=>{
-    console.log(msg)
+const emailToSocketIdMap = new Map();
+const socketIdToEmailMap = new Map();
+io.on('connection', (socket) => {
+  console.log("Socket connected",socket.id);
+  socket.on('room:join',(data)=>{
+      const {room,email} = data;
+      emailToSocketIdMap.set(email,socket.id);
+      socketIdToEmailMap.set(socket.id,email);
+      io.to(room).emit("user:joined",{email,id:socket.id});
+      socket.join(room);
+      io.to(socket.id).emit("room:join",data);
   })
-  socket.on("user:joined",(s)=>{
-    socket.broadcast.emit("user:joined",{s,id:socket.id});
+  socket.on('user:call',({to,offer})=>{
+      io.to(to).emit('incoming:call',{from:socket.id,offer})
   })
-  socket.on("offer",(offer)=>{
-    console.log("offer received");
-    socket.broadcast.emit("offer",offer);
+  socket.on('call:accepted',(to,ans)=>{
+      io.to(to).emit('call:accepted',{from:socket.id,ans})
+
   })
-
-  socket.on("answer",(answer)=>{
-    console.log("answer received");
-    socket.broadcast.emit("answer", answer);
+  socket.on('peer:nego:needed',({to,offer})=>{
+      io.to(to).emit("peer:nego:needed",{from:socket.id,offer});
   })
-
-  socket.on("ice-candidate", (candidate) => {
-    console.log("ICE candidate received");
-    socket.broadcast.emit("ice-candidate", candidate); // Broadcast the ICE candidate
-  });
-
-  socket.on("check-participants", (roomId) => {
-    if (!participants[roomId]) participants[roomId] = [];
-    participants[roomId].push(socket.id);
-    const isInitiator = participants[roomId].length === 1;
-    socket.emit("check-participants-result", isInitiator);
-  });
-
-  socket.on("disconnect", () => {
-    for (const roomId in participants) {
-      participants[roomId] = participants[roomId].filter(id => id !== socket.id);
-      if (participants[roomId].length === 0) {
-        delete participants[roomId];
-      }
-    }
-  });
-});
+  socket.on('peer:nego:done',({to,ans})=>{
+      io.to(to).emit("peer:nego:final",{from:socket.id,ans});
+      
+  })
+})
 
 server.listen(8000, () => {
   console.log("Server running at 8000");

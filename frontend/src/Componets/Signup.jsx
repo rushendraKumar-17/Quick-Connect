@@ -2,7 +2,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import "./signup.css";
 const Signup = () => {
     const navigate = useNavigate();
   const handleSubmit = (e) => {

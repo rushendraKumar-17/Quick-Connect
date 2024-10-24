@@ -19,20 +19,23 @@ const Login = () => {
   const [email,setEmail] = useState(null);
   const [password,setPassword] = useState(null);
   return (
-    <div className="main">
+    <div className="flex h-full items-center justify-center">
+      <div className="bg-gray-100 p-10">
       <form>
-        <label htmlFor="email">Email:</label>
-        <input type="email" id="email" name="email" onChange={(e)=>setEmail(e.target.value)} required className="input"/>
+        <h1 className="text-2xl mb-3 text-center">Login</h1>
+        <label htmlFor="email" className="block">Email:</label>
+        <input type="email" id="email" name="email" onChange={(e)=>setEmail(e.target.value)} required className="border border-gray-500 rounded-md p-1"/>
         <br />
-        <label htmlFor="password">Password:</label>
-        <input type="password" id="password" name="password" onChange={(e)=>setPassword(e.target.value)} required className="input"/>
-        <br />
-        <br />
-        <input type="submit" value="Login" onClick={handleSubmit} className="input"/>
+        <label htmlFor="password" className="block">Password:</label>
+        <input type="password" id="password" name="password" onChange={(e)=>setPassword(e.target.value)} required className="border border-gray-500 rounded-md p-1"/>
         <br />
         <br />
-        <p>Don&apos;t have an account?<Link to="/signup">Create One</Link></p>
+        <button onClick={handleSubmit} className="border rounded-xl bg-gray-200 border-black px-2 text-center hover:bg-gray-50">Login</button>
+        <br />
+        <br />
+        <p>Don&apos;t have an account?<Link to="/signup" className="underline text-blue-600">Create One</Link></p>
       </form>
+      </div>
     </div>
   );
 };

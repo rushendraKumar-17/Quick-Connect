@@ -1,53 +1,71 @@
-/* eslint-disable no-unused-vars */
-import React, { useEffect, useState } from "react";
-import "./Home.css";
-import axios from "axios";
+import React, { useCallback, useEffect, useState } from "react";
+import { useSocket } from "../context/SocketProvider";
 import { useNavigate } from "react-router-dom";
 const Home = () => {
-  const [roomId, setRoomId] = useState();
-  console.log("First",roomId);
+  const socket = useSocket();
   const navigate = useNavigate();
-  
-  const handleJoin = (e) => {
-    e.preventDefault();
-    // axios.get(`http://localhost:8000/api/meeting/${meetId}`).then((res)=>{
-    //   console.log(res);
-    // })
-    console.log("room id",roomId);
-    console.log("here");
-    navigate(`/meet/join/${roomId}/guest`);
-    // navigate(`/meet/${roomId}`);
-  };
-  const handleCreateRoom = (e) => {
-    e.preventDefault();
-    axios
-      .get("http://localhost:8000/api/meeting")
-      .then((res) => {
-        const meetId = res.data;
-        console.log("Backend",meetId);
-        navigate(`meet/${meetId}/host`)
-      })
-      .catch((e) => console.log(e));
-  };
+  const [email, setEmail] = useState("");
+  const [roomId, setRoomId] = useState("");
+  const handleSubmit = useCallback(
+    (e) => {
+      e.preventDefault();
+      socket.emit("room:join", { email, roomId });
+    },
+    [roomId, email, socket]
+  );
+  const handleJoinRoom = useCallback((data)=>{
+    const {email,roomId} = data;
+    console.log(email,roomId);
+    navigate(`/meet/${roomId}`);
+
+  },[navigate]);
+  useEffect(()=>{
+    socket.on("room:join",handleJoinRoom);
+    return ()=>{
+      socket.off('room:join',handleJoinRoom);
+    }
+  },[socket]);
   return (
     <div>
-      <label htmlFor="room">Enter room id:</label>
-      <input
-        type="text"
-        name="room-id"
-        id="room"
-        onChange={(e) => setRoomId(e.target.value)}
-        className="roomInput"
-      />
-      &nbsp;
-      <button onClick={handleJoin} style={{ padding: "0.3vw" }}>
-        Join
-      </button>
-      <br />
-      <br />
-      <button onClick={handleCreateRoom} style={{ padding: "1vw" }}>
-        Create room
-      </button>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          width: "30vw",
+          height: "25vw",
+          border: "1px solid black",
+          margin: "5vh auto",
+          padding: "2vw",
+          display: "flex",
+          flexDirection: "column",
+          gap: "2vh",
+        }}>
+        <h1 style={{ textAlign: "center" }}>Login</h1>
+        Email :
+        <input
+          type="email"
+          name="email"
+          id="email"
+          style={{ width: "20vw", height: "4vh", margin: "0vw 0vw 0vw 1vw" }}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <br />
+        room id:
+        <input
+          type="text"
+          name="roomId"
+          id="room"
+          style={{ width: "20vw", height: "4vh", margin: "0vw 0vw 0vw 1vw" }}
+          value={roomId}
+          onChange={(e) => setRoomId(e.target.value)}
+        />
+        <br />
+        <input
+          type="submit"
+          value="Join Room"
+          style={{ width: "8vw", height: "3vw", margin: "auto" }}
+        />
+      </form>
     </div>
   );
 };

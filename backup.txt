@@ -1,0 +1,396 @@
+const { meetId, role } = useParams(); // 'host' or 'guest'
+  const [myStream, setMyStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [peerConnection, setPeerConnection] = useState(null);
+  
+  // Get media stream (audio & video)
+  async function getMediaStream() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      return stream;
+    } catch (err) {
+      console.error("Error accessing media devices.", err);
+    }
+  }
+
+  // Host creates an offer
+  const createOffer = async () => {
+    const offer = await peer.createOffer();
+    return offer;
+  };
+
+  // Handle offer received by the guest and send an answer
+  const handleOffer = async (offer) => {
+    const answer = await peer.createAnswer(offer);
+    console.log("Got an offer");
+    socket.emit("answer", answer); // Send answer to the host
+    peer.setLocalDescription(answer);
+    peer.setRemoteDescription(offer);
+    sendStreams(); // Send local tracks after connection
+  };
+
+  // Add tracks to the peer connection
+  const sendStreams = () => {
+    for (const track of myStream.getTracks()) {
+      peer.peer.addTrack(track, myStream);
+    }
+  };
+
+  // useEffect(()=>{
+  //   peer.peer.addEventListener("track", async (ev) => {
+  //     const [remoteStream] = ev.streams;
+  //     console.log("Received remote tracks");
+  //     setRemoteStream(remoteStream); // Set remote stream
+  //     const remoteVideo = document.getElementById("remoteVideo");
+  //     remoteVideo.srcObject = remoteStream;
+  //   });
+  // })
+  // Set up media streams and peer connection logic
+  useEffect(() => {
+    const peer = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:global.stun.twilio.com:3478",
+          ],
+        },
+      ],
+    });
+    setPeerConnection(peer);
+
+    peer.onicecandidate((e)=>{
+      if(e.candidate){
+        socket.emit("ice-candidate",e.candidate,meetId);
+      }
+    })
+    peer.ontrack = e =>{
+      const remoteVideo = document.querySelector('#remoteVideo');
+      remoteVideo.srcObject = e.streams[0];
+    }
+
+    navigator.mediaDevices.getUserMedia({video:true,audio:true}).then((stream)=>{
+      const localVideo = document.querySelector("#localVideo");
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => peer.addTrack(track,stream));
+    })
+
+    socket.emit("join-room",meetId);
+    socket.on("offer",async(offer)=>{
+      await peer.setRemoteDescription(new RTCSessionDescription(offer));;
+      const answer = peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit('answer',answer,meetId);
+    })
+    socket.on('answer',async(answer)=>{
+      peer.setRemoteDescription(new RTCSessionDescription(answer));
+    })
+    socket.onicecandidate((candidate)=>{
+        peer.addIceCandidate(new RTCIceCandidate(candidate));
+    })  
+    const createOffer = async ()=>{
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      socket.emit("offer",offer,meetId);
+    }
+    socket.once('connect',()=>{
+      socket.emit("join-room",meetId);
+    })
+    socket.once('user-joined',createOffer);
+    return ()=>{
+      socket.disconnect();
+      if(pc) pc.close();
+    }
+    // getMediaStream().then((stream) => {
+    //   setMyStream(stream); // Set local stream
+    //   const localVideo = document.querySelector("#localVideo");
+    //   localVideo.srcObject = stream;
+
+      // Track event listener for receiving remote tracks
+      
+
+    //   if (role === "host") {
+    //     // Host creates an offer when someone joins
+    //     createOffer().then((offer) => {
+    //       socket.on("user:joined", (s) => {
+    //         console.log(`User ${s.id} joined`);
+    //         setRemoteSocketId(s.id);
+    //         socket.emit("offer", offer); // Send offer to the guest
+    //         peer.setLocalDescription(offer);
+    //       });
+    //     });
+
+    //     // Host handles the answer from the guest
+    //     socket.on("answer", (answer) => {peer.setRemoteDescription(answer);
+    //       console.log("Got answer from receiver");
+    //     });
+    //   } else {
+    //     // Guest sends 'joined' event and handles incoming offer
+    //     socket.emit("user:joined", { meetId: meetId, role: "guest" });
+    //     socket.on("offer", handleOffer); // Guest receives offer and responds with answer
+    //   }
+    // });
+
+  }, [meetId]);
+
+
+
+//own2
+  const initializePeerConnection = (stream) => {
+    peerConnection = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:global.stun.twilio.com:3478",
+          ],
+        },
+      ],
+    });
+
+    stream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stream);
+    });
+
+    const remoteMediaStream = new MediaStream();
+    remoteStream.srcObject = remoteMediaStream;
+    peerConnection.ontrack = (event) => {
+      event.streams[0].getTracks().forEach((track) => {
+        remoteMediaStream.addTrack(track);
+      });
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice-candidate", {
+          candidate: event.candidate,
+          meetId,
+        });
+      }
+    };
+  };
+
+  const createOffer = async (stream) => {
+    initializePeerConnection(stream);
+
+    try {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit("offer", { offer, meetId });
+      console.log("Offer created and sent");
+    } catch (error) {
+      console.error("Error creating offer:", error);
+    }
+  };
+
+  const createAnswer = async (stream, offer) => {
+    initializePeerConnection(stream);
+
+    try {
+      // Ensure this is called only after setRemoteDescription
+      await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(offer)
+      );
+
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+
+      socket.emit("answer", { answer, meetId });
+      console.log("Answer created and sent");
+    } catch (error) {
+      console.error("Error creating answer:", error);
+    }
+  };
+
+  const startMeeting = async () => {
+    localStream = document.querySelector("#localVideo");
+    remoteStream = document.querySelector("#remoteVideo");
+
+    const stream = await getUserMediaStream();
+    localStream.srcObject = stream;
+
+    if (role === "host") {
+      socket.on("user:joined", () => {
+        createOffer(stream);
+      });
+
+      socket.on("answer", (message) => {
+        if (!peerConnection.currentRemoteDescription) {
+          peerConnection
+            .setRemoteDescription(new RTCSessionDescription(message.answer))
+            .then(() => {
+              console.log("Answer received and remote description set");
+            })
+            .catch((e) =>
+              console.error("Error setting remote description:", e)
+            );
+        }
+      });
+    } else {
+      socket.emit("user:joined", meetId);
+
+      socket.on("offer", async (message) => {
+        console.log("Offer received", message);
+
+        createAnswer(stream, message.offer);
+      });
+    }
+
+    socket.on("ice-candidate", (message) => {
+      if (
+        peerConnection &&
+        peerConnection.remoteDescription &&
+        peerConnection.remoteDescription.type
+      ) {
+        peerConnection
+          .addIceCandidate(new RTCIceCandidate(message.candidate))
+          .then(() => console.log("ICE Candidate added"))
+          .catch((e) => console.error("Error adding ICE Candidate:", e));
+      } else {
+        console.warn("Remote description not set yet. ICE Candidate ignored.");
+      }
+    });
+  };
+
+
+
+  //own3
+
+  import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import { io } from "socket.io-client";
+
+const Meeting = () => {
+  const [myStream, setMyStream] = useState(null);
+  const { meetId, role } = useParams();
+  let peerConnection = null;
+  let localVideo = null;
+  let remoteVideo = null;
+  const servers = {
+    iceServers: [
+      {
+        urls: [
+          "stun:stun.l.google.com:19302",
+          "stun:global.stun.twilio.com:3478",
+        ],
+      },
+    ],
+  };
+  const handleCopy = () => {
+    navigator.clipboard.writeText(meetId);
+  };
+
+  const getUserMediaStream = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: true,
+    });
+    setMyStream(stream);
+    return stream;
+  };
+
+  const createMeeting = () => {
+    localVideo = document.querySelector("#localVideo");
+    remoteVideo = document.querySelector("#remoteVideo");
+    if (role === "host") {
+      getUserMediaStream().then((stream) => {
+        const socket = io("http://localhost:8000");
+        localVideo.srcObject = stream;
+        let remoteVideoStream = new MediaStream();
+        remoteVideo.srcObject = remoteVideoStream;
+        socket.on("user:join", async (e) => {
+          console.log("user joined");
+          const peerConnection = new RTCPeerConnection(servers);
+          stream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, stream);
+          });
+          const offer = await peerConnection.createOffer();
+          await peerConnection.setLocalDescription(offer);
+          socket.emit("offer", offer);
+          peerConnection.ontrack = (e) => {
+            e.streams[0].getTracks().forEach((track) => {
+              remoteMediaStream.addTrack(track);
+            });
+          };
+          if (peerConnection) {
+            peerConnection.onicecandidate((e) => {
+              if (e.candidate) {
+                socket.emit("ice-candidate", e.candidate);
+                console.log("SEnding ice");
+              }
+            });
+          }
+          socket.on("answer", async (answer) => {
+            await peerConnection.setRemoteDescription(answer);
+          });
+          socket.on("ice-candidate", async (ice) => {
+            if (peerConnection.remoteDescription) {
+              await peerConnection.addIceCandidate(ice);
+            }
+          });
+        });
+      });
+    } else {
+      getUserMediaStream().then(async (stream) => {
+        const socket = io("http://localhost:8000");
+        socket.emit("user:join", { meetId });
+        localVideo.srcObject = stream;
+        socket.on("offer", async (offer) => {
+          const peerConnection = new RTCPeerConnection(servers);
+          stream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, stream);
+          });
+          peerConnection.ontrack = (e) => {
+            e.streams[0].getTracks().forEach((track) => {
+              remoteMediaStream.addTrack(track);
+            });
+          };
+          if (peerConnection) {
+            peerConnection.onicecandidate(async (e) => {
+              if (e.candidate) {
+                socket.emit("ice-candidate", e.candidate);
+              }
+            });
+          }
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+          await peerConnection.setRemoteDescription(offer);
+          socket.on("ice-candidate", async (ice) => {
+            if (peerConnection.remoteDescription) {
+              await peerConnection.addIceCandidate(ice);
+            }
+          });
+        });
+      });
+    }
+  };
+  useEffect(() => {
+    createMeeting();
+  }, []);
+
+  return (
+    <div>
+      <h3>Meeting ID: {meetId}</h3>
+      <button
+        className="border border-black p-1 rounded-lg ml-2"
+        onClick={handleCopy}>
+        Copy
+      </button>
+      <video
+        id="localVideo"
+        className="border border-black"
+        autoPlay
+        playsInline></video>
+      <video
+        id="remoteVideo"
+        className="border border-black"
+        autoPlay
+        playsInline></video>
+    </div>
+  );
+};
+
+export default Meeting;
